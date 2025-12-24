@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import math
+import random
 
 from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
@@ -122,7 +123,6 @@ async def spin(request: SpinRequest):
     # In quantum mechanics, each measurement collapses the wavefunction uniquely
     measurement_outcomes = list(counts.keys())
     # Pick based on weighted probability from counts
-    import random
     measurement_str = random.choices(
         measurement_outcomes,
         weights=[counts[k] for k in measurement_outcomes],
@@ -133,7 +133,9 @@ async def spin(request: SpinRequest):
     measurements = [int(bit) for bit in measurement_str]
     
     # Map individual qubit measurements to symbols
-    symbols = [SYMBOLS[m * 4 % len(SYMBOLS)] for m in measurements]
+    # Use different symbols for 0 and 1 states by offsetting by half the symbol list
+    SYMBOL_OFFSET = len(SYMBOLS) // 2
+    symbols = [SYMBOLS[m * SYMBOL_OFFSET % len(SYMBOLS)] for m in measurements]
     
     # Return results with distribution
     return SpinResponse(
