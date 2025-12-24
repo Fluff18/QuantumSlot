@@ -98,17 +98,35 @@ The outcomes are mapped to slot symbols: 🍒 🍋 🍊 🍇 ⭐ 💎 7️⃣ �
    ```bash
    cd backend
    pip install -r requirements.txt
+   cd ..
    ```
 
 3. **Set up the frontend**
    ```bash
-   cd ../frontend
+   cd frontend
    npm install
+   cd ..
    ```
 
-### Running the Application
+### Quick Start (Automated)
 
-You need to run both the backend and frontend simultaneously.
+Use the provided script to start both servers automatically:
+
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+This will:
+- Start the backend API on `http://localhost:8000`
+- Start the frontend UI on `http://localhost:3000`
+- Open your browser automatically
+
+Press `Ctrl+C` to stop both servers.
+
+### Manual Start
+
+If you prefer to run the servers separately:
 
 **Terminal 1 - Backend:**
 ```bash
