@@ -1,6 +1,10 @@
 # ⚛️ Quantum Slot Machine
 
-A demonstration web application that uses quantum computing principles to generate random outcomes for a slot machine. Built with Python (FastAPI + Qiskit Aer) backend and React frontend.
+A demonstration web application that uses **real quantum computing hardware (IBM Quantum)** or simulation (Qiskit Aer) to generate random outcomes for a slot machine. Built with Python (FastAPI + Qiskit) backend and React frontend.
+
+## 🔬 **NEW: Real Quantum Hardware Support!**
+
+This application now supports **real IBM quantum computers**! Configure your IBM Quantum API token to run on actual quantum hardware instead of simulation. See [IBM Quantum Setup Guide](./IBM_QUANTUM_SETUP.md) for instructions.
 
 ## 🎯 What This Demo Does
 
@@ -58,9 +62,10 @@ The outcomes are mapped to slot symbols: 🍒 🍋 🍊 🍇 ⭐ 💎 7️⃣ �
 
 **Important Disclaimers:**
 
-1. **This uses a classical simulator (Qiskit Aer)**, not a real quantum computer
-   - The quantum circuit is simulated on classical hardware
-   - Results accurately model quantum behavior but are computed deterministically
+1. **Can use real quantum computers OR simulation**
+   - With IBM Quantum API token: Runs on real quantum hardware
+   - Without token: Uses Qiskit Aer simulator (classical simulation)
+   - Simulator accurately models quantum behavior but runs on classical hardware
 
 2. **Not cryptographically secure**
    - This is an educational demonstration
@@ -97,11 +102,22 @@ The outcomes are mapped to slot symbols: 🍒 🍋 🍊 🍇 ⭐ 💎 7️⃣ �
 2. **Set up the backend**
    ```bash
    cd backend
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
    pip install -r requirements.txt
    cd ..
    ```
 
-3. **Set up the frontend**
+3. **Configure IBM Quantum (Optional but Recommended!)**
+   
+   To use **real quantum hardware**:
+   - Get a free API token from [IBM Quantum](https://quantum.ibm.com/)
+   - Edit `backend/.env` and add your token
+   - See [IBM_QUANTUM_SETUP.md](./IBM_QUANTUM_SETUP.md) for detailed instructions
+   
+   Without a token, the app will use the simulator (still works great!)
+
+4. **Set up the frontend**
    ```bash
    cd frontend
    npm install
@@ -151,6 +167,7 @@ The web app will open at `http://localhost:3000`
    - Right (π): Bias toward |1⟩
 3. **Entanglement Toggle**: Enable CNOT gates to entangle the qubits
 4. **Distribution Chart**: Shows the measurement outcomes from 100 shots
+5. **Backend Indicator**: Shows whether you're using real quantum hardware or simulator
 
 ## 📚 Technical Details
 

@@ -9,6 +9,8 @@ function App() {
   const [distribution, setDistribution] = useState({});
   const [measurements, setMeasurements] = useState([]);
   const [error, setError] = useState(null);
+  const [backendUsed, setBackendUsed] = useState(null);
+  const [queuePosition, setQueuePosition] = useState(null);
 
   const handleSpin = async () => {
     setSpinning(true);
@@ -47,6 +49,8 @@ function App() {
         setSymbols(data.symbols);
         setMeasurements(data.measurements);
         setDistribution(data.distribution);
+        setBackendUsed(data.backend_used);
+        setQueuePosition(data.queue_position);
         setSpinning(false);
       }, 1000);
 
@@ -75,7 +79,21 @@ function App() {
     <div className="App">
       <header className="App-header">
         <h1>⚛️ Quantum Slot Machine</h1>
-        <p className="subtitle">Powered by Quantum Measurement</p>
+        <p className="subtitle">Powered by Real Quantum Hardware</p>
+        {backendUsed && (
+          <div className={`backend-indicator ${backendUsed.includes('ibm_') ? 'quantum' : 'simulator'}`}>
+            {backendUsed.includes('ibm_') ? (
+              <>
+                🔬 Running on: <strong>{backendUsed}</strong>
+                {queuePosition !== null && ` (Queue: ${queuePosition} jobs)`}
+              </>
+            ) : (
+              <>
+                🖥️ Running on: <strong>Simulator</strong>
+              </>
+            )}
+          </div>
+        )}
       </header>
 
       <div className="slot-machine">
@@ -203,12 +221,14 @@ function App() {
           </div>
         </div>
         <div className="disclaimer">
-          <h4>⚠️ What This Demo Does NOT Claim:</h4>
+          <h4>⚠️ Important Information:</h4>
           <ul>
-            <li>This uses Qiskit Aer, a <strong>classical simulator</strong>, not a real quantum computer</li>
-            <li>The simulation is deterministic but accurately models quantum behavior</li>
-            <li>This is an educational demo, not cryptographically secure randomness</li>
-            <li>Results demonstrate quantum principles but are computed classically</li>
+            <li>This application can run on <strong>real IBM quantum computers</strong> or a classical simulator</li>
+            <li>When connected to IBM Quantum, you're using actual quantum hardware (100+ qubits)</li>
+            <li>Look for the backend indicator above to see which system is being used</li>
+            <li>Real quantum hardware may have queue wait times during peak usage</li>
+            <li>The simulator provides instant results but is computed classically</li>
+            <li>This is an educational demo - not for cryptographic or production use</li>
           </ul>
         </div>
       </footer>

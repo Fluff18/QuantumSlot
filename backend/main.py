@@ -1,6 +1,7 @@
 """
 Quantum Slot Machine Backend
-Uses Qiskit Aer to generate truly random outcomes via quantum measurement
+Uses IBM Quantum (real quantum hardware) or Qiskit Aer simulator
+to generate truly random outcomes via quantum measurement
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,9 +9,54 @@ from pydantic import BaseModel
 from typing import Optional
 import math
 import random
+import os
+from dotenv import load_dotenv
 
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
+from qiskit_ibm_runtime import QiskitRuntimeService, Sampler, Options
+
+# Load environment variables
+load_dotenv()
+
+app = FastAPI(title="Quantum Slot Machine API")
+
+# IBM Quantum Configuration
+IBM_TOKEN = os.getenv("IBM_QUANTUM_TOKEN")
+IBM_BACKEND = os.getenv("IBM_QUANTUM_BACKEND", None)
+USE_SIMULATOR_FALLBACK = os.getenv("USE_SIMULATOR_FALLBACK", "true").lower() == "true"
+MAX_QUEUE_WAIT = int(os.getenv("MAX_QUEUE_WAIT", "300"))
+
+# Initialize IBM Quantum service if token is provided
+service = None
+quantum_backend = None
+using_real_quantum = False
+
+if IBM_TOKEN and IBM_TOKEN != "your_token_here":
+    try:
+        service = QiskitRuntimeService(channel="ibm_cloud", token=IBM_TOKEN)
+        
+        # Select backend
+        if IBM_BACKEND:
+            quantum_backend = service.backend(IBM_BACKEND)
+        else:
+            # Get least busy backend with at least 3 qubits
+            quantum_backend = service.least_busy(
+                simulator=False,
+                operational=True,
+                min_num_qubits=3
+            )
+        
+        using_real_quantum = True
+        print(f"✅ Connected to IBM Quantum: {quantum_backend.name}")
+        print(f"   Qubits: {quantum_backend.num_qubits}")
+        print(f"   Status: {quantum_backend.status().status_msg}")
+    except Exception as e:
+        print(f"⚠️  Failed to connect to IBM Quantum: {e}")
+        print(f"   Falling back to simulator")
+        using_real_quantum = False
+else:
+    print("ℹ️  No IBM Quantum token configured - using simulator")
 
 app = FastAPI(title="Quantum Slot Machine API")
 
@@ -38,6 +84,8 @@ class SpinResponse(BaseModel):
     symbols: list[str]  # The three slot symbols
     measurements: list[int]  # The raw measurement outcomes (0 or 1)
     distribution: dict[str, int]  # Distribution of all shots
+    backend_used: str  # Which backend was used (simulator or quantum hardware)
+    queue_position: Optional[int] = None  # Position in queue if using real hardware
 
 
 def create_quantum_circuit(theta: float, entanglement: bool) -> QuantumCircuit:
@@ -105,24 +153,80 @@ async def spin(request: SpinRequest):
     4. Measures the qubits to get quantum random outcomes
     5. Maps each qubit's measurement to a slot symbol
     
-    The randomness comes from quantum measurement, not pseudo-random algorithms.
+    If IBM Quantum is configured, uses real quantum hardware.
+    Otherwise, falls back to Qiskit Aer simulator.
     """
+    global using_real_quantum
+    
     # Create quantum circuit
     qc = create_quantum_circuit(request.theta, request.entanglement)
     
-    # Set up simulator
-    simulator = AerSimulator()
+    backend_name = "simulator"
+    queue_position = None
     
-    # Run the circuit multiple times to get distribution
-    shots = 100  # Number of measurements
-    job = simulator.run(qc, shots=shots)
-    result = job.result()
-    counts = result.get_counts()
+    # Try to use IBM Quantum hardware if available
+    if using_real_quantum and service and quantum_backend:
+        try:
+            # Check queue status
+            status = quantum_backend.status()
+            pending_jobs = status.pending_jobs
+            
+            print(f"📊 Queue status: {pending_jobs} pending jobs")
+            
+            # Use real quantum hardware if queue is reasonable
+            if pending_jobs < 10 or not USE_SIMULATOR_FALLBACK:
+                print(f"🔬 Running on real quantum hardware: {quantum_backend.name}")
+                
+                # Transpile circuit for the backend
+                transpiled_qc = transpile(qc, quantum_backend, optimization_level=3)
+                
+                # Set up options for execution
+                options = Options()
+                options.execution.shots = 100
+                options.optimization_level = 3
+                
+                # Use Sampler primitive to run the circuit
+                sampler = Sampler(backend=quantum_backend, options=options)
+                job = sampler.run(transpiled_qc)
+                
+                # Wait for result
+                result = job.result()
+                
+                # Extract counts from the result
+                quasi_dists = result.quasi_dists[0]
+                
+                # Convert quasi-distribution to counts format
+                shots = 100
+                counts = {}
+                for outcome, probability in quasi_dists.items():
+                    # Convert integer outcome to binary string
+                    bitstring = format(outcome, '03b')
+                    counts[bitstring] = int(probability * shots)
+                
+                backend_name = quantum_backend.name
+                queue_position = pending_jobs
+                print(f"✅ Quantum execution complete on {backend_name}")
+            else:
+                raise Exception(f"Queue too long ({pending_jobs} jobs), using simulator")
+                
+        except Exception as e:
+            print(f"⚠️  Quantum hardware unavailable: {e}")
+            print(f"   Falling back to simulator")
+            # Fall through to simulator
+            using_real_quantum = False
     
-    # Get one measurement for the current spin (pick the most recent)
-    # In quantum mechanics, each measurement collapses the wavefunction uniquely
+    # Use simulator if quantum hardware not available or failed
+    if backend_name == "simulator":
+        print("🖥️  Running on Qiskit Aer simulator")
+        simulator = AerSimulator()
+        shots = 100
+        job = simulator.run(qc, shots=shots)
+        result = job.result()
+        counts = result.get_counts()
+        backend_name = "qiskit_aer_simulator"
+    
+    # Get one measurement for the current spin
     measurement_outcomes = list(counts.keys())
-    # Pick based on weighted probability from counts
     measurement_str = random.choices(
         measurement_outcomes,
         weights=[counts[k] for k in measurement_outcomes],
@@ -133,7 +237,6 @@ async def spin(request: SpinRequest):
     measurements = [int(bit) for bit in measurement_str]
     
     # Map individual qubit measurements to symbols
-    # Use different symbols for 0 and 1 states by offsetting by half the symbol list
     SYMBOL_OFFSET = len(SYMBOLS) // 2
     symbols = [SYMBOLS[m * SYMBOL_OFFSET % len(SYMBOLS)] for m in measurements]
     
@@ -141,7 +244,9 @@ async def spin(request: SpinRequest):
     return SpinResponse(
         symbols=symbols,
         measurements=measurements,
-        distribution=counts
+        distribution=counts,
+        backend_used=backend_name,
+        queue_position=queue_position
     )
 
 
@@ -151,7 +256,17 @@ async def info():
     Get information about the quantum circuit and how it works.
     """
     return {
-        "description": "Quantum Slot Machine using Qiskit Aer simulator",
+        "description": "Quantum Slot Machine using IBM Quantum hardware or Qiskit Aer simulator",
+        "ibm_quantum": {
+            "connected": using_real_quantum,
+            "backend": quantum_backend.name if quantum_backend else None,
+            "num_qubits": quantum_backend.num_qubits if quantum_backend else None,
+            "status": quantum_backend.status().status_msg if quantum_backend else None,
+            "pending_jobs": quantum_backend.status().pending_jobs if quantum_backend else None
+        } if quantum_backend else {
+            "connected": False,
+            "message": "No IBM Quantum token configured. Using simulator only."
+        },
         "quantum_circuit": {
             "qubits": 3,
             "gates": "RY(θ) rotation gates applied to each qubit",
@@ -166,9 +281,12 @@ async def info():
             "theta_pi_2": "50/50 superposition (default)",
             "theta_pi": "100% probability of |1⟩"
         },
-        "randomness_source": "Quantum measurement collapse",
+        "randomness_source": "Real quantum measurement" if using_real_quantum else "Simulated quantum measurement",
         "symbols": SYMBOLS,
-        "disclaimer": "This is a simulation using Qiskit Aer, not a real quantum computer. Results demonstrate quantum mechanical principles but are computed classically."
+        "configuration": {
+            "use_simulator_fallback": USE_SIMULATOR_FALLBACK,
+            "max_queue_wait": MAX_QUEUE_WAIT
+        }
     }
 
 
